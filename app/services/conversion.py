@@ -60,15 +60,17 @@ def refine_dicom_metadata(dcm_path: str):
 async def convert_img(input_path: str, output_path: str, temp_dir: str, original_filename: str, keys: Optional[List[str]] = None) -> str:
     ext = os.path.splitext(original_filename)[1].lower()
     work_input = input_path
+    cmd_args = []
     
-    # img2dcm natively supports JPEG and BMP. Convert PNG to BMP using Pillow if needed.
+    # img2dcm natively supports JPEG and BMP. Convert PNG to BMP using Pillow first if needed.
     if ext == ".png":
         bmp_path = os.path.join(temp_dir, "temp_converted.bmp")
         with Image.open(input_path) as img:
             img.convert("RGB").save(bmp_path, "BMP")
         work_input = bmp_path
+        cmd_args.extend(["-i", "BMP"])
 
-    cmd_args = parse_keys_to_args(keys)
+    cmd_args.extend(parse_keys_to_args(keys))
     cmd_args.extend([work_input, output_path])
     
     await run_dcmtk_tool("img2dcm", cmd_args)
