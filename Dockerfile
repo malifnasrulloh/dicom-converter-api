@@ -1,57 +1,34 @@
-# ============================================================
-# Stage 1: Build the Go binary
-# ============================================================
-FROM golang:1.26-trixie AS builder
+FROM python:3.12-slim
 
-WORKDIR /app
+LABEL maintainer="malifnasrulloh"
+LABEL description="DICOM Converter API (Python + pydicom + pynetdicom + DCMTK)"
 
-# Cache dependencies first
-COPY go.mod go.sum ./
-RUN go mod download
+# Set Python runtime flags (unbuffered output & disable pyc writing)
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
-# Copy source and build
-COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w -X dicom-converter-api/handler.AppVersion=$(git describe --tags --always --dirty 2>/dev/null || echo 'docker')" \
-    -o /dicom-converter-api .
-
-# ============================================================
-# Stage 2: Minimal runtime image
-# ============================================================
-FROM debian:trixie-slim
-
-# Install DCMTK and required runtime dependencies
+# Install system dependencies (DCMTK binaries, native Python packages, and C libraries)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+    apt-get install -y \
         dcmtk \
-        ca-certificates \
-        curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create non-root user
-RUN groupadd -r dicomconv && useradd -r -g dicomconv -d /app -s /sbin/nologin dicomconv
+        libgl1 \
+        libglib2.0-0 \
+        curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy binary from builder
-COPY --from=builder /dicom-converter-api .
+# Copy requirements and install pynetdicom (not present in standard apt repos)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Create temp directory for conversions
-RUN mkdir -p /tmp/dcm && chown dicomconv:dicomconv /tmp/dcm
-
-# Switch to non-root user
-USER dicomconv
-
-# Environment defaults
-ENV PORT=8080
-ENV MAX_IMAGE_UPLOAD_MB=100
-ENV MAX_PDF_UPLOAD_MB=200
-ENV MAX_CDA_UPLOAD_MB=100
-ENV MAX_STL_UPLOAD_MB=200
+# Copy application source code
+COPY app/ app/
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD ["curl", "-f", "http://localhost:8080/health"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
 
-ENTRYPOINT ["/app/dicom-converter-api"]
+CMD ["python3", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "4"]

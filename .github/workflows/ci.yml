@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   pull_request:
-    branches: [main]
+    branches: [main, master]
 
 jobs:
   build-and-test:
@@ -14,30 +14,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
         with:
-          go-version-file: go.mod
+          python-version: "3.12"
+          cache: "pip"
 
-      - name: Install DCMTK
+      - name: Install DCMTK & system libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends dcmtk
+          sudo apt-get install -y --no-install-recommends dcmtk libgl1 libglib2.0-0 curl
 
-      - name: Download dependencies
-        run: go mod download
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Build
-        run: go build -v ./...
-
-      - name: Run unit tests
-        run: go test -v -race -coverprofile=coverage.out ./...
-
-      - name: Upload coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage
-          path: coverage.out
+      - name: Verify Python AST compilation
+        run: |
+          python -m py_compile app/main.py app/config.py app/models/*.py app/services/*.py app/routers/*.py
 
   docker:
     runs-on: ubuntu-latest
@@ -61,18 +56,3 @@ jobs:
           curl -f http://localhost:8080/health || exit 1
           docker stop dicom-converter-api-test
           docker rm dicom-converter-api-test
-
-  lint:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Run go vet
-        run: go vet ./...

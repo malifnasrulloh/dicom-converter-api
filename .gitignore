@@ -1,44 +1,10 @@
-# Binaries for programs and plugins
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-dicom-converter-api
-
-# Test binary, built with `go test -c`
-*.test
-
-# Output of the go coverage tool
-*.out
-coverage.out
-
-# Dependency directories
-# vendor/
-
-# Mac OS temp files
-.DS_Store
-
-# Temporary files or logs
-*.log
-tmp/
-
-# DCMTK downloads
-dcmtk-*/
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Docker volumes
-orthanc-data/
-
-# Test output files
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv
+venv/
 *.dcm
-!tests/fixtures/*.dcm
-
-# OS files
-Thumbs.db
+*.jpg
+*.png
+*.bmp
