@@ -81,18 +81,10 @@ func HandleSendToOrthanc(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Parse orthanc_modify payload (required)
+	// Parse optional orthanc_modify payload (deprecated: tags are now embedded during conversion)
 	modifyStr := r.FormValue("orthanc_modify")
-	if modifyStr == "" {
-		model.WriteError(w, http.StatusBadRequest, "MISSING_ORTHANC_MODIFY",
-			"Missing 'orthanc_modify' parameter", "")
-		return
-	}
-	var modifyReq service.OrthancModifyRequest
-	if err := json.Unmarshal([]byte(modifyStr), &modifyReq); err != nil {
-		model.WriteError(w, http.StatusBadRequest, "INVALID_ORTHANC_MODIFY",
-			"Invalid 'orthanc_modify' JSON", err.Error())
-		return
+	if modifyStr != "" {
+		slog.Info("orthanc_modify parameter provided but ignored — tags are embedded during DCMTK conversion")
 	}
 
 	// Parse optional conversion parameters
@@ -133,40 +125,21 @@ func HandleSendToOrthanc(w http.ResponseWriter, r *http.Request) {
 			// Cleanup files when the job finishes (even if it fails)
 			defer os.RemoveAll(tempDir)
 
-
-
-
-
 			outputFilePath := filepath.Join(tempDir, "output.dcm")
 
-			// Step 1: Convert to DICOM
+			// Step 1: Convert to DICOM (all tags embedded via --key flags)
 			if err := convertToDICOM(ctx, fileType, inputFilePath, outputFilePath, tempDir, fileHeader.Filename, paramsStr); err != nil {
 				return nil, fmt.Errorf("conversion failed: %w", err)
 			}
 
-			// Step 2: Upload to Orthanc
+			// Step 2: Upload to Orthanc (no /modify needed — tags already correct)
 			uploadResp, err := service.UploadInstance(&OrthancCfg, outputFilePath)
 			if err != nil {
 				return nil, fmt.Errorf("orthanc upload failed: %w", err)
 			}
 
-			// Step 3: Modify study tags
-			// NOTE: Demographic/clinical tags (PatientName, PatientID, etc.) are now
-			// embedded during conversion (via --key flags), not sent in orthanc_modify.
-			// KeepSource=true avoids study duplication.
-			// Stripping is no longer needed — Java caller no longer includes these tags.
-
-			modifyResp, err := service.ModifyStudy(&OrthancCfg, uploadResp.ParentStudy, &modifyReq)
-			if err != nil {
-				slog.Error("modify failed, rolling back upload", "job_id", jobID, "instance_id", uploadResp.ID, "error", err)
-				_ = service.DeleteInstance(&OrthancCfg, uploadResp.ID)
-				return nil, fmt.Errorf("orthanc modify failed: %w", err)
-			}
-
-			// Success! Return the combined result
 			return SendToOrthancResult{
 				Upload: uploadResp,
-				Modify: modifyResp,
 			}, nil
 		},
 	})

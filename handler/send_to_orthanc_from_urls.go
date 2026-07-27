@@ -22,7 +22,7 @@ type SendToOrthancFromURLsRequest struct {
 	FileType      string                     `json:"filetype"` // "img", "pdf", "cda", "stl"
 	URLs          []string                   `json:"urls"`
 	Parameters    json.RawMessage            `json:"parameters,omitempty"`
-	OrthancModify service.OrthancModifyRequest `json:"orthanc_modify"`
+	OrthancModify *service.OrthancModifyRequest `json:"orthanc_modify,omitempty"` // deprecated: tags are now embedded during conversion
 }
 
 // HandleSendToOrthancFromURLs handles POST /api/v1/send-to-orthanc-from-urls
@@ -154,32 +154,15 @@ func HandleSendToOrthancFromURLs(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			// Step 3: Modify study tags
-			if parentStudyID != "" {
-				// NOTE: Demographic/clinical tags are embedded during conversion (--key flags),
-				// Strip from orthanc_modify.Replace to prevent Orthanc 400 if Java caller
-				// includes them in both places.
-				if req.OrthancModify.Replace != nil {
-					delete(req.OrthancModify.Replace, "PatientName")
-					delete(req.OrthancModify.Replace, "PatientID")
-					delete(req.OrthancModify.Replace, "PatientBirthDate")
-					delete(req.OrthancModify.Replace, "PatientSex")
-				}
-
-				modifyResp, err := service.ModifyStudy(&OrthancCfg, parentStudyID, &req.OrthancModify)
-				if err != nil {
-					slog.ErrorContext(ctx, "modify failed, rolling back uploads", "study_id", parentStudyID, "error", err)
-					rollbackUploadedInstances(uploadedInstanceIDs)
-					return nil, fmt.Errorf("orthanc modify failed: %w", err)
-				}
-
+			// All tags were embedded during DCMTK conversion via --key flags.
+			// No /studies/{id}/modify call needed.
+			if lastUploadResp != nil {
 				return SendToOrthancResult{
 					Upload: lastUploadResp,
-					Modify: modifyResp,
 				}, nil
 			}
 
-			return nil, fmt.Errorf("no parent study ID resolved")
+			return nil, fmt.Errorf("no instances were uploaded")
 		},
 	})
 
