@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     host: str = os.getenv("HOST", "0.0.0.0")
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     
+    orthanc_dicom_port: int = int(os.getenv("ORTHANC_DICOM_PORT", "4242"))
+    orthanc_aet: str = os.getenv("ORTHANC_AET", "ORTHANC")
+    use_cstore_upload: bool = os.getenv("USE_CSTORE_UPLOAD", "false").lower() in ("true", "1", "yes")
+    
     max_image_upload_size: int = 50 * 1024 * 1024  # 50 MB
     max_pdf_upload_size: int = 100 * 1024 * 1024   # 100 MB
     max_cda_upload_size: int = 20 * 1024 * 1024    # 20 MB

@@ -69,6 +69,8 @@ async def convert_img(input_path: str, output_path: str, temp_dir: str, original
             img.convert("RGB").save(bmp_path, "BMP")
         work_input = bmp_path
         cmd_args.extend(["-i", "BMP"])
+    elif ext == ".bmp":
+        cmd_args.extend(["-i", "BMP"])
 
     cmd_args.extend(parse_keys_to_args(keys))
     cmd_args.extend([work_input, output_path])

@@ -13,6 +13,7 @@ from app.services.orthanc_client import orthanc_client
 from app.services.conversion import (
     convert_img, convert_pdf, convert_cda, convert_stl, sanitize_filename
 )
+from app.services.dicom_sender import send_dicom_cstore
 from app.models.job import SendToOrthancResponse
 from app.models.orthanc import SendToOrthancFromURLsRequest
 
@@ -56,8 +57,21 @@ async def process_file_send_job(
 
         job_manager.update_job(job_id, "processing", progress=60)
 
-        # Step 2: Upload to Orthanc
-        upload_resp = await orthanc_client.upload_instance(output_file_path)
+        # Step 2: Upload to Orthanc (via pynetdicom C-STORE or HTTP REST API)
+        if settings.use_cstore_upload:
+            host = urlparse(settings.orthanc_url).hostname or "orthanc"
+            success = send_dicom_cstore(
+                output_file_path,
+                remote_host=host,
+                remote_port=settings.orthanc_dicom_port,
+                remote_aet=settings.orthanc_aet
+            )
+            if not success:
+                raise RuntimeError("pynetdicom C-STORE transfer failed")
+            upload_resp = {"Status": "Success", "Protocol": "DICOM C-STORE", "TargetAET": settings.orthanc_aet}
+        else:
+            upload_resp = await orthanc_client.upload_instance(output_file_path)
+
         job_manager.update_job(
             job_id,
             "completed",
@@ -104,7 +118,19 @@ async def process_urls_send_job(
                 elif file_type == "stl":
                     await convert_stl(input_file_path, output_file_path, keys)
 
-                last_upload_resp = await orthanc_client.upload_instance(output_file_path)
+                if settings.use_cstore_upload:
+                    host = urlparse(settings.orthanc_url).hostname or "orthanc"
+                    success = send_dicom_cstore(
+                        output_file_path,
+                        remote_host=host,
+                        remote_port=settings.orthanc_dicom_port,
+                        remote_aet=settings.orthanc_aet
+                    )
+                    if not success:
+                        raise RuntimeError("pynetdicom C-STORE transfer failed")
+                    last_upload_resp = {"Status": "Success", "Protocol": "DICOM C-STORE", "TargetAET": settings.orthanc_aet}
+                else:
+                    last_upload_resp = await orthanc_client.upload_instance(output_file_path)
 
         if last_upload_resp:
             job_manager.update_job(job_id, "completed", progress=100, result={"upload": last_upload_resp})

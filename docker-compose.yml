@@ -13,6 +13,7 @@ services:
       - ORTHANC_PORT=8042
       - ORTHANC_USER=orthanc
       - ORTHANC_PASS=orthanc
+      - USE_CSTORE_UPLOAD=true
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
