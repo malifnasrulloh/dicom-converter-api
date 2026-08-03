@@ -394,3 +394,9 @@ Retrieves background job status and final upload details.
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## Credits
+
+Original implementation by **Jaisyullah Rafiul Islam** for the **Transformation and Digitalization Team, Ministry of Health Indonesia** (Reference code: [jaisyullah/go-dcm](https://github.com/jaisyullah/go-dcm)).
