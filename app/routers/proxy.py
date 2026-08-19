@@ -19,7 +19,7 @@ async def handle_modify_study(study_id: str, req: Optional[OrthancModifyRequest]
 
 @router.post("/studies/find-by-acsn")
 async def handle_find_study_by_accession(req: FindStudyByAccessionRequest):
-    study_id = await orthanc_client.find_study_by_accession(req.accession_number)
+    study_id = await orthanc_client.find_study_by_accession(req.accession_number, retries=5, delay_sec=0.4)
     if not study_id:
         return {"status": "not_found", "study_id": ""}
     return {"status": "success", "study_id": study_id}

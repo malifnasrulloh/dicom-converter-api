@@ -28,19 +28,30 @@ class OrthancClient:
             resp.raise_for_status()
             return resp.json()
 
-    async def find_study_by_accession(self, accession_number: str) -> Optional[str]:
-        if not settings.is_orthanc_configured:
+    async def find_study_by_accession(self, accession_number: str, retries: int = 1, delay_sec: float = 0.3) -> Optional[str]:
+        if not settings.is_orthanc_configured or not accession_number:
             return None
 
+        clean_acsn = accession_number.strip()
         async with self._get_client() as client:
-            resp = await client.post("/tools/find", json={
-                "Level": "Study",
-                "Query": {"AccessionNumber": accession_number}
-            })
-            if resp.status_code == 200:
-                studies = resp.json()
-                if studies and len(studies) > 0:
-                    return studies[0]
+            for attempt in range(1, retries + 1):
+                try:
+                    resp = await client.post("/tools/find", json={
+                        "Level": "Study",
+                        "Query": {"AccessionNumber": clean_acsn}
+                    })
+                    if resp.status_code == 200:
+                        studies = resp.json()
+                        if studies and len(studies) > 0:
+                            study_id = studies[0]
+                            logger.info(f"find_study_by_accession: Found study_id={study_id} for ACSN={clean_acsn} (attempt {attempt}/{retries})")
+                            return study_id
+                except Exception as e:
+                    logger.warning(f"find_study_by_accession attempt {attempt} failed: {e}")
+
+                if attempt < retries:
+                    import asyncio
+                    await asyncio.sleep(delay_sec)
             return None
 
     async def find_patient_studies(self, patient_id: str) -> List[Dict[str, Any]]:

@@ -31,6 +31,17 @@ def parse_keys_from_params_str(params_str: Optional[str]) -> List[str]:
         pass
     return []
 
+def extract_accession_from_keys(keys: Optional[List[str]]) -> str:
+    if not keys:
+        return ""
+    for k in keys:
+        if k and "=" in k:
+            tag, val = k.split("=", 1)
+            clean_tag = tag.strip().lower()
+            if clean_tag in ["accessionnumber", "0008,0050", "(0008,0050)"]:
+                return val.strip()
+    return ""
+
 async def process_file_send_job(
     job_id: str,
     file_type: str,
@@ -58,6 +69,7 @@ async def process_file_send_job(
         job_manager.update_job(job_id, "processing", progress=60)
 
         # Step 2: Upload to Orthanc (via pynetdicom C-STORE or HTTP REST API)
+        resolved_study_id = ""
         if settings.use_cstore_upload:
             host = urlparse(settings.orthanc_url).hostname or "orthanc"
             success = send_dicom_cstore(
@@ -71,12 +83,24 @@ async def process_file_send_job(
             upload_resp = {"Status": "Success", "Protocol": "DICOM C-STORE", "TargetAET": settings.orthanc_aet}
         else:
             upload_resp = await orthanc_client.upload_instance(output_file_path)
+            if isinstance(upload_resp, dict):
+                resolved_study_id = upload_resp.get("ParentStudy", "")
+
+        # Step 3: Verify Orthanc indexing & resolve Study ID
+        acsn = extract_accession_from_keys(keys)
+        if not resolved_study_id and acsn:
+            # Poll Orthanc /tools/find with retries to guarantee SQLite commit
+            resolved_study_id = await orthanc_client.find_study_by_accession(acsn, retries=10, delay_sec=0.4) or ""
 
         job_manager.update_job(
             job_id,
             "completed",
             progress=100,
-            result={"upload": upload_resp}
+            result={
+                "upload": upload_resp,
+                "study_id": resolved_study_id,
+                "accession_number": acsn
+            }
         )
     except Exception as e:
         logger.error(f"Job {job_id} failed: {e}")
@@ -94,6 +118,7 @@ async def process_urls_send_job(
     try:
         job_manager.update_job(job_id, "processing", progress=10)
         last_upload_resp = None
+        resolved_study_id = ""
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             for idx, url_str in enumerate(urls):
@@ -131,9 +156,26 @@ async def process_urls_send_job(
                     last_upload_resp = {"Status": "Success", "Protocol": "DICOM C-STORE", "TargetAET": settings.orthanc_aet}
                 else:
                     last_upload_resp = await orthanc_client.upload_instance(output_file_path)
+                    if isinstance(last_upload_resp, dict) and "ParentStudy" in last_upload_resp:
+                        resolved_study_id = last_upload_resp.get("ParentStudy", "")
+
+        # Verify Orthanc indexing & resolve Study ID
+        acsn = extract_accession_from_keys(keys)
+        if not resolved_study_id and acsn:
+            # Poll Orthanc /tools/find with retries to guarantee SQLite commit
+            resolved_study_id = await orthanc_client.find_study_by_accession(acsn, retries=10, delay_sec=0.4) or ""
 
         if last_upload_resp:
-            job_manager.update_job(job_id, "completed", progress=100, result={"upload": last_upload_resp})
+            job_manager.update_job(
+                job_id,
+                "completed",
+                progress=100,
+                result={
+                    "upload": last_upload_resp,
+                    "study_id": resolved_study_id,
+                    "accession_number": acsn
+                }
+            )
         else:
             job_manager.update_job(job_id, "failed", error="No instances uploaded")
     except Exception as e:
