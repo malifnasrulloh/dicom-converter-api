@@ -47,11 +47,22 @@ def parse_keys_to_args(keys: Optional[List[str]]) -> List[str]:
                 args.extend(["--key", k.strip()])
     return args
 
-def refine_dicom_metadata(dcm_path: str):
-    """Ensure SpecificCharacterSet ISO_IR 192 (UTF-8) and clean DICOM metadata using pydicom."""
+def refine_dicom_metadata(
+    dcm_path: str,
+    study_instance_uid: Optional[str] = None,
+    series_instance_uid: Optional[str] = None,
+    instance_number: Optional[int] = None
+):
+    """Ensure SpecificCharacterSet ISO_IR 192 (UTF-8), apply batch UIDs if provided, and clean DICOM metadata."""
     try:
         ds = pydicom.dcmread(dcm_path)
         ds.SpecificCharacterSet = "ISO_IR 192"
+        if study_instance_uid:
+            ds.StudyInstanceUID = study_instance_uid
+        if series_instance_uid:
+            ds.SeriesInstanceUID = series_instance_uid
+        if instance_number is not None:
+            ds.InstanceNumber = str(instance_number)
         ds.save_as(dcm_path)
         logger.debug(f"Refined DICOM metadata for {dcm_path}")
     except Exception as e:
@@ -66,7 +77,16 @@ def get_dcm_sop_instance_uid(dcm_path: str) -> str:
         logger.warning(f"Could not read SOPInstanceUID from {dcm_path}: {e}")
         return ""
 
-async def convert_img(input_path: str, output_path: str, temp_dir: str, original_filename: str, keys: Optional[List[str]] = None) -> str:
+async def convert_img(
+    input_path: str,
+    output_path: str,
+    temp_dir: str,
+    original_filename: str,
+    keys: Optional[List[str]] = None,
+    study_instance_uid: Optional[str] = None,
+    series_instance_uid: Optional[str] = None,
+    instance_number: Optional[int] = None
+) -> str:
     ext = os.path.splitext(original_filename)[1].lower()
     work_input = input_path
     cmd_args = []
@@ -85,26 +105,67 @@ async def convert_img(input_path: str, output_path: str, temp_dir: str, original
     cmd_args.extend([work_input, output_path])
     
     await run_dcmtk_tool("img2dcm", cmd_args)
-    refine_dicom_metadata(output_path)
+    refine_dicom_metadata(
+        output_path,
+        study_instance_uid=study_instance_uid,
+        series_instance_uid=series_instance_uid,
+        instance_number=instance_number
+    )
     return output_path
 
-async def convert_pdf(input_path: str, output_path: str, keys: Optional[List[str]] = None) -> str:
+async def convert_pdf(
+    input_path: str,
+    output_path: str,
+    keys: Optional[List[str]] = None,
+    study_instance_uid: Optional[str] = None,
+    series_instance_uid: Optional[str] = None,
+    instance_number: Optional[int] = None
+) -> str:
     cmd_args = parse_keys_to_args(keys)
     cmd_args.extend([input_path, output_path])
     await run_dcmtk_tool("pdf2dcm", cmd_args)
-    refine_dicom_metadata(output_path)
+    refine_dicom_metadata(
+        output_path,
+        study_instance_uid=study_instance_uid,
+        series_instance_uid=series_instance_uid,
+        instance_number=instance_number
+    )
     return output_path
 
-async def convert_cda(input_path: str, output_path: str, keys: Optional[List[str]] = None) -> str:
+async def convert_cda(
+    input_path: str,
+    output_path: str,
+    keys: Optional[List[str]] = None,
+    study_instance_uid: Optional[str] = None,
+    series_instance_uid: Optional[str] = None,
+    instance_number: Optional[int] = None
+) -> str:
     cmd_args = parse_keys_to_args(keys)
     cmd_args.extend([input_path, output_path])
     await run_dcmtk_tool("cda2dcm", cmd_args)
-    refine_dicom_metadata(output_path)
+    refine_dicom_metadata(
+        output_path,
+        study_instance_uid=study_instance_uid,
+        series_instance_uid=series_instance_uid,
+        instance_number=instance_number
+    )
     return output_path
 
-async def convert_stl(input_path: str, output_path: str, keys: Optional[List[str]] = None) -> str:
+async def convert_stl(
+    input_path: str,
+    output_path: str,
+    keys: Optional[List[str]] = None,
+    study_instance_uid: Optional[str] = None,
+    series_instance_uid: Optional[str] = None,
+    instance_number: Optional[int] = None
+) -> str:
     cmd_args = parse_keys_to_args(keys)
     cmd_args.extend([input_path, output_path])
     await run_dcmtk_tool("stl2dcm", cmd_args)
-    refine_dicom_metadata(output_path)
+    refine_dicom_metadata(
+        output_path,
+        study_instance_uid=study_instance_uid,
+        series_instance_uid=series_instance_uid,
+        instance_number=instance_number
+    )
     return output_path

@@ -6,6 +6,7 @@ import logging
 import httpx
 from typing import Optional, List
 from urllib.parse import urlparse
+from pydicom.uid import generate_uid
 from fastapi import APIRouter, UploadFile, File, Form, BackgroundTasks, HTTPException, status
 from app.config import settings
 from app.services.job_manager import job_manager
@@ -124,6 +125,10 @@ async def process_urls_send_job(
         resolved_study_id = ""
         last_sop_uid = ""
 
+        # Generate a shared StudyInstanceUID and SeriesInstanceUID so all images in this batch form 1 single study in Orthanc!
+        batch_study_uid = generate_uid()
+        batch_series_uid = generate_uid()
+
         async with httpx.AsyncClient(timeout=60.0) as client:
             for idx, url_str in enumerate(urls):
                 parsed = urlparse(url_str)
@@ -138,14 +143,35 @@ async def process_urls_send_job(
                     f.write(resp.content)
 
                 output_file_path = os.path.join(temp_dir, f"output_{idx}.dcm")
+                inst_num = idx + 1
                 if file_type == "img":
-                    await convert_img(input_file_path, output_file_path, temp_dir, clean_name, keys)
+                    await convert_img(
+                        input_file_path, output_file_path, temp_dir, clean_name, keys,
+                        study_instance_uid=batch_study_uid,
+                        series_instance_uid=batch_series_uid,
+                        instance_number=inst_num
+                    )
                 elif file_type == "pdf":
-                    await convert_pdf(input_file_path, output_file_path, keys)
+                    await convert_pdf(
+                        input_file_path, output_file_path, keys,
+                        study_instance_uid=batch_study_uid,
+                        series_instance_uid=batch_series_uid,
+                        instance_number=inst_num
+                    )
                 elif file_type == "cda":
-                    await convert_cda(input_file_path, output_file_path, keys)
+                    await convert_cda(
+                        input_file_path, output_file_path, keys,
+                        study_instance_uid=batch_study_uid,
+                        series_instance_uid=batch_series_uid,
+                        instance_number=inst_num
+                    )
                 elif file_type == "stl":
-                    await convert_stl(input_file_path, output_file_path, keys)
+                    await convert_stl(
+                        input_file_path, output_file_path, keys,
+                        study_instance_uid=batch_study_uid,
+                        series_instance_uid=batch_series_uid,
+                        instance_number=inst_num
+                    )
 
                 last_sop_uid = get_dcm_sop_instance_uid(output_file_path)
 
