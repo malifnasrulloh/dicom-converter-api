@@ -11,7 +11,7 @@ from app.config import settings
 from app.services.job_manager import job_manager
 from app.services.orthanc_client import orthanc_client
 from app.services.conversion import (
-    convert_img, convert_pdf, convert_cda, convert_stl, sanitize_filename
+    convert_img, convert_pdf, convert_cda, convert_stl, sanitize_filename, get_dcm_sop_instance_uid
 )
 from app.services.dicom_sender import send_dicom_cstore
 from app.models.job import SendToOrthancResponse
@@ -66,9 +66,10 @@ async def process_file_send_job(
         else:
             raise ValueError(f"Unsupported filetype: {file_type}")
 
+        sop_uid = get_dcm_sop_instance_uid(output_file_path)
         job_manager.update_job(job_id, "processing", progress=60)
 
-        # Step 2: Upload to Orthanc (via pynetdicom C-STORE or HTTP REST API)
+        # Step 2: Upload to Orthanc (HTTP REST API or DICOM C-STORE)
         resolved_study_id = ""
         if settings.use_cstore_upload:
             host = urlparse(settings.orthanc_url).hostname or "orthanc"
@@ -81,16 +82,17 @@ async def process_file_send_job(
             if not success:
                 raise RuntimeError("pynetdicom C-STORE transfer failed")
             upload_resp = {"Status": "Success", "Protocol": "DICOM C-STORE", "TargetAET": settings.orthanc_aet}
+            if sop_uid:
+                resolved_study_id = await orthanc_client.find_study_by_sop_instance_uid(sop_uid, retries=10, delay_sec=0.4) or ""
         else:
             upload_resp = await orthanc_client.upload_instance(output_file_path)
             if isinstance(upload_resp, dict):
                 resolved_study_id = upload_resp.get("ParentStudy", "")
 
-        # Step 3: Verify Orthanc indexing & resolve Study ID
+        # Step 3: Fallback verification via AccessionNumber if needed
         acsn = extract_accession_from_keys(keys)
         if not resolved_study_id and acsn:
-            # Poll Orthanc /tools/find with retries to guarantee SQLite commit
-            resolved_study_id = await orthanc_client.find_study_by_accession(acsn, retries=10, delay_sec=0.4) or ""
+            resolved_study_id = await orthanc_client.find_study_by_accession(acsn, retries=5, delay_sec=0.4) or ""
 
         job_manager.update_job(
             job_id,
@@ -99,7 +101,8 @@ async def process_file_send_job(
             result={
                 "upload": upload_resp,
                 "study_id": resolved_study_id,
-                "accession_number": acsn
+                "accession_number": acsn,
+                "sop_instance_uid": sop_uid
             }
         )
     except Exception as e:
@@ -119,6 +122,7 @@ async def process_urls_send_job(
         job_manager.update_job(job_id, "processing", progress=10)
         last_upload_resp = None
         resolved_study_id = ""
+        last_sop_uid = ""
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             for idx, url_str in enumerate(urls):
@@ -143,6 +147,8 @@ async def process_urls_send_job(
                 elif file_type == "stl":
                     await convert_stl(input_file_path, output_file_path, keys)
 
+                last_sop_uid = get_dcm_sop_instance_uid(output_file_path)
+
                 if settings.use_cstore_upload:
                     host = urlparse(settings.orthanc_url).hostname or "orthanc"
                     success = send_dicom_cstore(
@@ -154,16 +160,17 @@ async def process_urls_send_job(
                     if not success:
                         raise RuntimeError("pynetdicom C-STORE transfer failed")
                     last_upload_resp = {"Status": "Success", "Protocol": "DICOM C-STORE", "TargetAET": settings.orthanc_aet}
+                    if last_sop_uid:
+                        resolved_study_id = await orthanc_client.find_study_by_sop_instance_uid(last_sop_uid, retries=10, delay_sec=0.4) or ""
                 else:
                     last_upload_resp = await orthanc_client.upload_instance(output_file_path)
                     if isinstance(last_upload_resp, dict) and "ParentStudy" in last_upload_resp:
                         resolved_study_id = last_upload_resp.get("ParentStudy", "")
 
-        # Verify Orthanc indexing & resolve Study ID
+        # Fallback verification via AccessionNumber if needed
         acsn = extract_accession_from_keys(keys)
         if not resolved_study_id and acsn:
-            # Poll Orthanc /tools/find with retries to guarantee SQLite commit
-            resolved_study_id = await orthanc_client.find_study_by_accession(acsn, retries=10, delay_sec=0.4) or ""
+            resolved_study_id = await orthanc_client.find_study_by_accession(acsn, retries=5, delay_sec=0.4) or ""
 
         if last_upload_resp:
             job_manager.update_job(
@@ -173,7 +180,8 @@ async def process_urls_send_job(
                 result={
                     "upload": last_upload_resp,
                     "study_id": resolved_study_id,
-                    "accession_number": acsn
+                    "accession_number": acsn,
+                    "sop_instance_uid": last_sop_uid
                 }
             )
         else:

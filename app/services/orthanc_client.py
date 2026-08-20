@@ -73,6 +73,45 @@ class OrthancClient:
                 return results
             return []
 
+    async def get_instance(self, instance_id: str) -> Optional[Dict[str, Any]]:
+        if not settings.is_orthanc_configured or not instance_id:
+            return None
+        async with self._get_client() as client:
+            resp = await client.get(f"/instances/{instance_id}")
+            if resp.status_code == 200:
+                return resp.json()
+            return None
+
+    async def find_study_by_sop_instance_uid(self, sop_instance_uid: str, retries: int = 10, delay_sec: float = 0.3) -> Optional[str]:
+        if not settings.is_orthanc_configured or not sop_instance_uid:
+            return None
+
+        clean_uid = sop_instance_uid.strip()
+        async with self._get_client() as client:
+            for attempt in range(1, retries + 1):
+                try:
+                    resp = await client.post("/tools/find", json={
+                        "Level": "Instance",
+                        "Query": {"SOPInstanceUID": clean_uid}
+                    })
+                    if resp.status_code == 200:
+                        instances = resp.json()
+                        if instances and len(instances) > 0:
+                            inst_id = instances[0]
+                            inst_resp = await client.get(f"/instances/{inst_id}")
+                            if inst_resp.status_code == 200:
+                                study_id = inst_resp.json().get("ParentStudy")
+                                if study_id:
+                                    logger.info(f"find_study_by_sop_instance_uid: Found study_id={study_id} for SOPInstanceUID={clean_uid} (attempt {attempt}/{retries})")
+                                    return study_id
+                except Exception as e:
+                    logger.warning(f"find_study_by_sop_instance_uid attempt {attempt} failed: {e}")
+
+                if attempt < retries:
+                    import asyncio
+                    await asyncio.sleep(delay_sec)
+            return None
+
     async def send_study_to_modality(self, study_id: str, modality_ae: str) -> bool:
         if not settings.is_orthanc_configured:
             return False

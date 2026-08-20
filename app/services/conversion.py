@@ -57,6 +57,15 @@ def refine_dicom_metadata(dcm_path: str):
     except Exception as e:
         logger.warning(f"Could not refine pydicom metadata for {dcm_path}: {e}")
 
+def get_dcm_sop_instance_uid(dcm_path: str) -> str:
+    """Extract SOPInstanceUID from a DICOM file."""
+    try:
+        ds = pydicom.dcmread(dcm_path, stop_before_pixels=True)
+        return str(getattr(ds, "SOPInstanceUID", "")).strip()
+    except Exception as e:
+        logger.warning(f"Could not read SOPInstanceUID from {dcm_path}: {e}")
+        return ""
+
 async def convert_img(input_path: str, output_path: str, temp_dir: str, original_filename: str, keys: Optional[List[str]] = None) -> str:
     ext = os.path.splitext(original_filename)[1].lower()
     work_input = input_path
