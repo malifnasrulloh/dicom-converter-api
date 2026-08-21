@@ -4,7 +4,7 @@ from pynetdicom import AE, StoragePresentationContexts, AllStoragePresentationCo
 
 logger = logging.getLogger("dicom-sender")
 
-def send_dicom_cstore(dcm_path: str, remote_host: str, remote_port: int, remote_aet: str, calling_aet: str = "PYTHON_SCU") -> bool:
+def send_dicom_cstore(dcm_path: str, remote_host: str, remote_port: int, remote_aet: str, calling_aet: str = "SIMRS_CONVERTER") -> bool:
     """Send a DICOM file directly over native C-STORE protocol to a remote DICOM SCU/SCP node."""
     try:
         ds = pydicom.dcmread(dcm_path)

@@ -53,10 +53,16 @@ def refine_dicom_metadata(
     series_instance_uid: Optional[str] = None,
     instance_number: Optional[int] = None
 ):
-    """Ensure SpecificCharacterSet ISO_IR 192 (UTF-8), apply batch UIDs if provided, and clean DICOM metadata."""
+    """Ensure SpecificCharacterSet ISO_IR 192 (UTF-8), apply batch UIDs if provided, tag webapps source, and clean DICOM metadata."""
     try:
         ds = pydicom.dcmread(dcm_path)
         ds.SpecificCharacterSet = "ISO_IR 192"
+        # Explicit markers identifying instance as converted from webapps
+        ds.ImageComments = "SOURCE_WEBAPPS"
+        ds.ConversionType = "WSD"
+        ds.SecondaryCaptureDeviceManufacturer = "SIMRS-Khanza"
+        ds.SecondaryCaptureDeviceManufacturerModelName = "dicom-converter-api"
+
         if study_instance_uid:
             ds.StudyInstanceUID = study_instance_uid
         if series_instance_uid:
